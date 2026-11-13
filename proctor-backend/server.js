@@ -365,6 +365,10 @@ const adminOtpLimiter = rateLimit({
 });
 app.use("/api", generalLimiter);
 
+app.get("/", (req, res) =>
+  res.json({ message: "Smart Proctor Backend API is running successfully!", health: "/api/health" })
+);
+
 app.get("/api/health", (req, res) =>
   res.json({ ok: true, time: Date.now(), source: data.USE_AIRTABLE ? "airtable" : "demo", db: mongoose.connection.readyState === 1 })
 );
