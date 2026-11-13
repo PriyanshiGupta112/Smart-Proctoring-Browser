@@ -336,6 +336,24 @@ app.use(corsMiddleware);
 app.options("*", corsMiddleware);
 app.use(express.json({ limit: "10mb" })); // room for violation snapshots
 
+let isConnected = false;
+async function connectDB() {
+  if (isConnected && mongoose.connection.readyState === 1) return;
+  if (!MONGODB_URI) throw new Error("MONGODB_URI is missing");
+  await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000 });
+  isConnected = true;
+}
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error("Database connection error:", err.message);
+    res.status(500).json({ error: "Database connection failed: " + err.message });
+  }
+});
+
 const generalLimiter = rateLimit({ windowMs: 60 * 1000, limit: 600, standardHeaders: true, legacyHeaders: false });
 const otpLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, limit: 15, standardHeaders: true, legacyHeaders: false,
@@ -1120,19 +1138,22 @@ app.use((err, req, res, next) => {
 });
 
 // ---------- START ----------
-mongoose
-  .connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000 })
-  .then(() => {
-    console.log("MongoDB connected");
-    app.listen(PORT, () => {
-      console.log("Smart Proctor backend running on http://localhost:" + PORT);
-      console.log("Data source: " + (data.USE_AIRTABLE ? "Airtable" : "built-in demo data (Airtable keys are empty)"));
-      console.log("Allowed origins: " + ORIGINS.join(", "));
-      if (DEV_SHOW_OTP) console.log("DEV_SHOW_OTP is on: OTPs are returned in API responses (demo only).");
+if (process.env.VERCEL !== "1") {
+  connectDB()
+    .then(() => {
+      console.log("MongoDB connected");
+      app.listen(PORT, () => {
+        console.log("Smart Proctor backend running on http://localhost:" + PORT);
+        console.log("Data source: " + (data.USE_AIRTABLE ? "Airtable" : "built-in demo data (Airtable keys are empty)"));
+        console.log("Allowed origins: " + ORIGINS.join(", "));
+        if (DEV_SHOW_OTP) console.log("DEV_SHOW_OTP is on: OTPs are returned in API responses (demo only).");
+      });
+    })
+    .catch((err) => {
+      console.error("MongoDB connection failed: " + err.message);
+      console.error("Check MONGODB_URI, the database user's password, and Atlas > Network Access (add 0.0.0.0/0).");
+      process.exit(1);
     });
-  })
-  .catch((err) => {
-    console.error("MongoDB connection failed: " + err.message);
-    console.error("Check MONGODB_URI, the database user's password, and Atlas > Network Access (add 0.0.0.0/0).");
-    process.exit(1);
-  });
+}
+
+module.exports = app;
